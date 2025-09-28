@@ -33,7 +33,6 @@ def load_and_process_data(data_source):
 
         if is_excel:
             # Usar pd.read_excel para arquivos XLSX
-            #st.warning("Detectado arquivo Excel (.xlsx). Tentando carregar com pd.read_excel.")
             df = pd.read_excel(data_source, header=header_row, engine='openpyxl', dtype=dtype_spec)
         else:
             # Usar pd.read_csv para arquivos CSV
@@ -108,7 +107,7 @@ loaded_from_file = False
 if os.path.exists(EXPECTED_FILE_NAME):
     df, hoje = load_and_process_data(EXPECTED_FILE_NAME)
     if not df.empty:
-        # --- NOVO: Cálculo e exibição da data de última modificação do arquivo ---
+        # --- Cálculo e exibição da data de última modificação do arquivo ---
         try:
             timestamp = os.path.getmtime(EXPECTED_FILE_NAME)
             last_modified_date = datetime.fromtimestamp(timestamp).strftime('%d/%m/%Y %H:%M:%S')
@@ -132,11 +131,11 @@ if df.empty or not loaded_from_file:
             # Exibir a data e nome do arquivo carregado pelo usuário
             st.success(f"Dados carregados com sucesso do arquivo: **{uploaded_file.name}**")
     elif df.empty:
-        st.warning("Por favor, carregue o arquivo de dados CSV ou Excel para iniciar a análise.")
+        st.warning("Por favor, carregue o arquivo de dados Excel extraídos da LX02 para iniciar a análise.")
 
 
 if not df.empty:
-    # --- Métricas Chave (KPIs) ---
+    # --- Métricas Chave (KPIs) - COM EMOJIS ---
     col1, col2, col3 = st.columns(3)
 
     total_materiais = df['Material'].nunique()
@@ -145,19 +144,19 @@ if not df.empty:
 
     with col1:
         st.metric(
-            label="Total de Materiais Únicos",
+            label="📦 Total de Materiais Únicos", # EMOJI
             value=f"{total_materiais}"
         )
 
     with col2:
         st.metric(
-            label="Média de Aging (Dias)",
+            label="⏳ Média de Aging (Dias)", # EMOJI
             value=f"{media_aging:.1f} dias"
         )
 
     with col3:
         st.metric(
-            label="Materiais em Risco Crítico",
+            label="🚨 Materiais em Risco Crítico (Lotes)", # EMOJI e Clarificação
             value=f"{criticos_count}",
             delta=f"Representa {(criticos_count / total_materiais * 100):.1f}% do total"
         )
@@ -184,7 +183,7 @@ if not df.empty:
 
     # --- Gráficos do Dashboard ---
 
-    st.header("Análise de Envelhecimento por Categoria")
+    st.header("Análise do aging por Categoria")
     col_chart_1, col_chart_2 = st.columns([1, 2])
 
     # Gráfico 1: Distribuição Percentual por Categoria (Pizza)
