@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from datetime import datetime, date
-import os # Importação adicionada para verificar o arquivo
+import os
 
 # --- Configurações Iniciais da Página ---
 st.set_page_config(
@@ -12,12 +12,21 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- Inicialização do Session State para Persistência ---
+# Inicializa o DataFrame no estado da sessão (st.session_state)
+if 'df_data' not in st.session_state:
+    st.session_state.df_data = pd.DataFrame()
+if 'hoje_data' not in st.session_state:
+    st.session_state.hoje_data = date.today()
+if 'uploaded_file_name' not in st.session_state:
+    st.session_state.uploaded_file_name = None
+
 # --- Função de Carregamento e Processamento de Dados ---
 @st.cache_data
 def load_and_process_data(data_source):
     """Carrega, limpa e processa os dados da planilha, aceitando path ou arquivo carregado (CSV ou XLSX)."""
     
-    # Determinar se o arquivo é Excel ou CSV baseado na extensão ou tipo de arquivo Streamlit
+    # Determina se o arquivo é Excel ou CSV baseado na extensão ou tipo de arquivo Streamlit
     is_excel = False
     if isinstance(data_source, str) and (data_source.endswith('.xlsx') or data_source.endswith('.xls')):
         is_excel = True
@@ -38,7 +47,6 @@ def load_and_process_data(data_source):
             # Usar pd.read_csv para arquivos CSV
             df = pd.read_csv(data_source, sep=',', encoding='utf-8', header=header_row, engine='python', dtype=dtype_spec)
 
-        # Renomear colunas para facilitar o uso.
         # Nomes esperados após pular as 3 primeiras linhas:
         df.columns = [
             'Material', 'Descricao_Material', 'Lote', 'Estoque_Disponivel',
@@ -61,7 +69,7 @@ def load_and_process_data(data_source):
         # Remover linhas onde a data é inválida
         df.dropna(subset=['Ultimo_Movimento'], inplace=True)
 
-        # 1. Calcular o Envelhecimento (Aging) em dias
+        # 1. Calcular o (Aging) em dias
         hoje = date.today()
         # Calcula a diferença de dias entre a data de hoje e a data do último movimento
         df['Dias_Em_Estoque'] = (pd.to_datetime(hoje) - df['Ultimo_Movimento']).dt.days
@@ -91,55 +99,84 @@ def load_and_process_data(data_source):
         st.error(f"Detalhes do erro: {e}")
         return pd.DataFrame(), date.today()
 
+# --- Função para Limpar os Dados ---
+def clear_data():
+    """Limpa o session_state para permitir novo upload."""
+    st.session_state.df_data = pd.DataFrame()
+    st.session_state.hoje_data = date.today()
+    st.session_state.uploaded_file_name = None
+    st.rerun()
+
 # --- Componente principal do App ---
 
 st.title("💊 Aging Pesagem") # Título atualizado
-st.markdown(f"**Data de Referência:** {date.today().strftime('%d/%m/%Y')}")
+# Usa a data armazenada no session_state
+st.markdown(f"**Data de Referência:** {st.session_state.hoje_data.strftime('%d/%m/%Y')}")
 st.divider()
 
-# Nome do arquivo esperado (do upload original)
-EXPECTED_FILE_NAME = "EXPORT_20250211_144147.xlsx" # Alterado para o nome XLSX para priorizar o carregamento correto
-df = pd.DataFrame()
-hoje = date.today()
+# Nome do arquivo esperado (para carregamento automático local, se a sessão estiver vazia)
+EXPECTED_FILE_NAME = "EXPORT_20250211_144147.xlsx" 
+df = st.session_state.df_data
+hoje = st.session_state.hoje_data
 loaded_from_file = False
 
-# 1. Tentar carregar o arquivo se estiver no diretório (procurando pelo nome original do upload)
-if os.path.exists(EXPECTED_FILE_NAME):
-    df, hoje = load_and_process_data(EXPECTED_FILE_NAME)
-    if not df.empty:
-        # --- Cálculo e exibição da data de última modificação do arquivo ---
-        try:
-            timestamp = os.path.getmtime(EXPECTED_FILE_NAME)
-            last_modified_date = datetime.fromtimestamp(timestamp).strftime('%d/%m/%Y %H:%M:%S')
-            st.info(f"Dados carregados automaticamente do arquivo: **{EXPECTED_FILE_NAME}** (Última Modificação: {last_modified_date})")
-        except OSError:
-            st.info(f"Dados carregados automaticamente do arquivo: **{EXPECTED_FILE_NAME}**")
-        # --------------------------------------------------------------------------
-        loaded_from_file = True
+# --- Lógica de Carregamento (Prioriza Session State) ---
+if df.empty:
+    # 1. Tentar carregar o arquivo padrão se estiver no diretório (apenas na primeira execução)
+    if os.path.exists(EXPECTED_FILE_NAME):
+        df, hoje = load_and_process_data(EXPECTED_FILE_NAME)
+        if not df.empty:
+            st.session_state.df_data = df
+            st.session_state.hoje_data = hoje
+            st.session_state.uploaded_file_name = EXPECTED_FILE_NAME
+            
+            try:
+                timestamp = os.path.getmtime(EXPECTED_FILE_NAME)
+                last_modified_date = datetime.fromtimestamp(timestamp).strftime('%d/%m/%Y %H:%M:%S')
+                st.info(f"Dados carregados automaticamente do arquivo: **{EXPECTED_FILE_NAME}** (Última Modificação: {last_modified_date})")
+            except OSError:
+                st.info(f"Dados carregados automaticamente do arquivo: **{EXPECTED_FILE_NAME}**")
+            
+            loaded_from_file = True
 
-# 2. Se não carregou automaticamente ou se o usuário quiser carregar outro arquivo
-if df.empty or not loaded_from_file:
-    uploaded_file = st.file_uploader(
-        "Selecione o arquivo CSV/Excel com os dados de estoque:",
-        type=['csv', 'xlsx', 'xls']
-    )
-    if uploaded_file:
-        df, hoje = load_and_process_data(uploaded_file)
-        if df.empty:
-             st.warning("Falha ao processar o arquivo carregado. Tente novamente ou verifique o formato.")
+    # 2. Upload pelo usuário se o DataFrame ainda estiver vazio
+    if st.session_state.df_data.empty:
+        uploaded_file = st.file_uploader(
+            "Selecione o arquivo CSV/Excel com os dados de estoque:",
+            type=['csv', 'xlsx', 'xls']
+        )
+        if uploaded_file:
+            # Carrega e processa o arquivo carregado
+            df_uploaded, hoje_uploaded = load_and_process_data(uploaded_file)
+            if df_uploaded.empty:
+                 st.warning("Falha ao processar o arquivo carregado. Tente novamente ou verifique o formato.")
+            else:
+                # Salva o novo DataFrame no session state e dispara um rerun
+                st.session_state.df_data = df_uploaded
+                st.session_state.hoje_data = hoje_uploaded
+                st.session_state.uploaded_file_name = uploaded_file.name
+                st.success(f"Dados carregados com sucesso do arquivo: **{st.session_state.uploaded_file_name}**")
+                st.rerun() # Dispara rerun para carregar o dashboard imediatamente
         else:
-            # Exibir a data e nome do arquivo carregado pelo usuário
-            st.success(f"Dados carregados com sucesso do arquivo: **{uploaded_file.name}**")
-    elif df.empty:
-        st.warning("Por favor, carregue o arquivo de dados Excel extraídos da LX02 para iniciar a análise.")
+            st.warning("Por favor, carregue o arquivo de dados CSV ou Excel para iniciar a análise.")
+
+else:
+    # Se o DataFrame já estiver carregado na sessão, exibe a mensagem de sucesso e o botão de limpar
+    st.success(f"Dados carregados e persistentes do arquivo: **{st.session_state.uploaded_file_name or 'Arquivo Local Padrão'}**")
+    st.button("❌ Limpar Dados e Fazer Novo Upload", on_click=clear_data)
+    # df e hoje já estão definidos via session_state no início do bloco 'if not df.empty:'
+    df = st.session_state.df_data
+    hoje = st.session_state.hoje_data
 
 
 if not df.empty:
+   
     # --- Métricas Chave (KPIs) - COM EMOJIS ---
     col1, col2, col3 = st.columns(3)
 
     total_materiais = df['Material'].nunique()
     media_aging = df['Dias_Em_Estoque'].mean()
+    # O cálculo crítico usa df (que é o session_state.df_data)
     criticos_count = df[df['Categoria_Aging'] == 'Crítico'].shape[0]
 
     with col1:
@@ -155,10 +192,12 @@ if not df.empty:
         )
 
     with col3:
+        # A métrica usa a contagem de linhas críticas versus o total de materiais únicos
+        percentual_critico = (criticos_count / total_materiais * 100) if total_materiais > 0 else 0
         st.metric(
             label="🚨 Materiais em Risco Crítico (Lotes)", # EMOJI e Clarificação
             value=f"{criticos_count}",
-            delta=f"Representa {(criticos_count / total_materiais * 100):.1f}% do total"
+            delta=f"Representa {percentual_critico:.1f}% dos materiais únicos"
         )
 
     st.divider()
@@ -177,9 +216,12 @@ if not df.empty:
         df_filtered = df[df['Descricao_Material'].isin(selected_materials)]
     else:
         df_filtered = df.copy()
+    
+    # Recalcula o total de materiais únicos para o info box
+    total_materiais_filtrados = df_filtered['Material'].nunique()
 
     # Exibir a contagem de resultados após o filtro
-    st.sidebar.info(f"Mostrando {df_filtered['Material'].nunique()} de {total_materiais} materiais únicos.")
+    st.sidebar.info(f"Mostrando {total_materiais_filtrados} de {total_materiais} materiais únicos.")
 
     # --- Gráficos do Dashboard ---
 
@@ -274,14 +316,14 @@ if not df.empty:
 
     # Aplicar cores de fundo na coluna Status
     def color_status(val):
-        color = 'white'
+        color = 'green'
         if val == 'Crítico':
-            color = '#f8d7da' # Cor de fundo levemente vermelha
+            color = "#b64c55"
         elif val == 'Alerta':
-            color = '#fff3cd' # Cor de fundo levemente amarela
+            color = "#f3d572"
         return f'background-color: {color}'
 
-    # --- NOVO: Função para formatar o número no padrão brasileiro ---
+    # --- Função para formatar o número no padrão brasileiro ---
     def format_br_estoque(val):
         """Formata valor para 3 casas decimais, usando '.' para milhar e ',' para decimal."""
         if pd.isna(val):
