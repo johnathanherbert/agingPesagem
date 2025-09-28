@@ -294,7 +294,6 @@ if not df.empty:
     st.write("Dados referente ao depósito PES - Pesagem")
 
     # Tabela detalhada
-    # Selecionar e formatar colunas para a tabela
     df_display = df_filtered[[
         'Material', 'Descricao_Material', 'Lote', 'Estoque_Disponivel', 'UMB',
         'Ultimo_Movimento', 'Dias_Em_Estoque', 'Categoria_Aging'
